@@ -4,7 +4,6 @@ import Layout from '@/components/Layout';
 import SeatCard from '@/components/SeatCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
-import { supabase } from '@/integrations/supabase/client';
 
 interface Seat {
   id: number;
@@ -33,37 +32,28 @@ const MyReservations = () => {
       setLoading(true);
       console.log('Fetching reservations for user:', user?.id);
       
-      const { data, error } = await supabase
-        .from('seats')
-        .select(`
-          *,
-          profiles:user_id(username)
-        `)
-        .eq('user_id', user?.id)
-        .in('status', ['pending', 'reserved']);
+      // For now, return mock data since database is not set up
+      const mockReservations: Seat[] = [
+        {
+          id: 2,
+          name: 'Seat A2',
+          location: 'Main Floor',
+          status: 'reserved',
+          user: user?.username,
+          reserved_until: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
+        },
+        {
+          id: 3,
+          name: 'Seat B1',
+          location: 'Study Area',
+          status: 'pending',
+          user: user?.username,
+          pending_until: new Date(Date.now() + 3 * 60 * 1000).toISOString()
+        }
+      ];
 
-      if (error) {
-        console.error('Error fetching reservations:', error);
-        showNotification({
-          type: 'error',
-          title: 'Error',
-          message: 'Failed to fetch reservations. Please try again.',
-        });
-        return;
-      }
-
-      const transformedReservations: Seat[] = data.map(seat => ({
-        id: seat.id,
-        name: seat.name,
-        location: seat.location,
-        status: seat.status as 'available' | 'pending' | 'reserved' | 'unavailable',
-        user: seat.profiles?.username || user?.username,
-        reserved_until: seat.reserved_until || undefined,
-        pending_until: seat.pending_until || undefined,
-      }));
-
-      console.log('Fetched reservations:', transformedReservations);
-      setReservations(transformedReservations);
+      console.log('Using mock reservations data:', mockReservations);
+      setReservations(mockReservations);
     } catch (error) {
       console.error('Error fetching reservations:', error);
       showNotification({
@@ -80,26 +70,7 @@ const MyReservations = () => {
     try {
       console.log('Cancelling booking for seat:', seatId);
       
-      const { error } = await supabase
-        .from('seats')
-        .update({
-          status: 'available',
-          user_id: null,
-          pending_until: null
-        })
-        .eq('id', seatId)
-        .eq('user_id', user?.id);
-
-      if (error) {
-        console.error('Cancel error:', error);
-        showNotification({
-          type: 'error',
-          title: 'Cancellation Failed',
-          message: 'Unable to cancel booking. Please try again.',
-        });
-        return;
-      }
-
+      // Update local state for now since database is not set up
       const updatedReservations = reservations.filter(r => r.id !== seatId);
       setReservations(updatedReservations);
 
@@ -122,26 +93,7 @@ const MyReservations = () => {
     try {
       console.log('Releasing seat:', seatId);
       
-      const { error } = await supabase
-        .from('seats')
-        .update({
-          status: 'available',
-          user_id: null,
-          reserved_until: null
-        })
-        .eq('id', seatId)
-        .eq('user_id', user?.id);
-
-      if (error) {
-        console.error('Release error:', error);
-        showNotification({
-          type: 'error',
-          title: 'Release Failed',
-          message: 'Unable to release seat. Please try again.',
-        });
-        return;
-      }
-
+      // Update local state for now since database is not set up
       const updatedReservations = reservations.filter(r => r.id !== seatId);
       setReservations(updatedReservations);
 
