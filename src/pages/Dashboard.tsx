@@ -4,6 +4,7 @@ import Layout from '@/components/Layout';
 import SeatCard from '@/components/SeatCard';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Seat {
   id: number;
@@ -27,18 +28,6 @@ const Dashboard = () => {
   const { showNotification } = useNotification();
   const { user } = useAuth();
 
-  // Mock data for demonstration
-  const mockSeats: Seat[] = [
-    { id: 1, name: 'A101', location: 'Main Floor', status: 'available' },
-    { id: 2, name: 'A102', location: 'Main Floor', status: 'pending', user: 'john_doe', pending_until: '2024-01-01T10:30:00Z' },
-    { id: 3, name: 'A103', location: 'Main Floor', status: 'reserved', user: 'jane_smith', reserved_until: '2024-01-01T14:00:00Z' },
-    { id: 4, name: 'B201', location: 'Second Floor', status: 'unavailable' },
-    { id: 5, name: 'B202', location: 'Second Floor', status: 'available' },
-    { id: 6, name: 'B203', location: 'Second Floor', status: 'available' },
-    { id: 7, name: 'C301', location: 'Third Floor', status: 'available' },
-    { id: 8, name: 'C302', location: 'Third Floor', status: 'pending', user: user?.username, pending_until: '2024-01-01T11:15:00Z' },
-  ];
-
   useEffect(() => {
     fetchSeats();
   }, []);
@@ -49,11 +38,40 @@ const Dashboard = () => {
 
   const fetchSeats = async () => {
     try {
-      // Mock API call - replace with actual API endpoint
       setLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API delay
-      setSeats(mockSeats);
+      console.log('Fetching seats from Supabase...');
+      
+      const { data, error } = await supabase
+        .from('seats')
+        .select(`
+          *,
+          profiles:user_id(username)
+        `);
+
+      if (error) {
+        console.error('Error fetching seats:', error);
+        showNotification({
+          type: 'error',
+          title: 'Error',
+          message: 'Failed to fetch seats. Please try again.',
+        });
+        return;
+      }
+
+      const transformedSeats: Seat[] = data.map(seat => ({
+        id: seat.id,
+        name: seat.name,
+        location: seat.location,
+        status: seat.status as 'available' | 'pending' | 'reserved' | 'unavailable',
+        user: seat.profiles?.username || undefined,
+        reserved_until: seat.reserved_until || undefined,
+        pending_until: seat.pending_until || undefined,
+      }));
+
+      console.log('Fetched seats:', transformedSeats);
+      setSeats(transformedSeats);
     } catch (error) {
+      console.error('Error fetching seats:', error);
       showNotification({
         type: 'error',
         title: 'Error',
@@ -87,35 +105,66 @@ const Dashboard = () => {
 
   const handleBookSeat = async (seatId: number) => {
     try {
-      // Mock API call
-      const seat = seats.find(s => s.id === seatId);
-      if (!seat) return;
+      if (!user) return;
 
-      const updatedSeats = seats.map(s =>
-        s.id === seatId
-          ? { ...s, status: 'pending' as const, user: user?.username, pending_until: new Date(Date.now() + 5 * 60 * 1000).toISOString() }
-          : s
-      );
-      setSeats(updatedSeats);
+      console.log('Booking seat:', seatId, 'for user:', user.id);
+      
+      const pendingUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      
+      const { data, error } = await supabase
+        .from('seats')
+        .update({
+          status: 'pending',
+          user_id: user.id,
+          pending_until: pendingUntil
+        })
+        .eq('id', seatId)
+        .eq('status', 'available')
+        .select()
+        .single();
 
-      showNotification({
-        type: 'success',
-        title: '🎉 Seat Booked Successfully!',
-        message: `
-          <div class="space-y-2">
-            <div><strong>Seat:</strong> ${seat.name}</div>
-            <div><strong>Location:</strong> ${seat.location}</div>
-            <div><strong>Status:</strong> <span class="text-pending-600 font-medium">Pending Confirmation</span></div>
-            <div><strong>Confirm Within:</strong> <span class="text-red-600 font-medium">5 minutes</span></div>
-            <div class="text-sm text-gray-600 mt-2">Please visit the admin desk to confirm your booking.</div>
-          </div>
-        `,
-        actionButton: {
-          label: 'Check My Reservations',
-          onClick: () => window.location.href = '/my-reservations'
-        }
-      });
+      if (error) {
+        console.error('Booking error:', error);
+        showNotification({
+          type: 'error',
+          title: 'Booking Failed',
+          message: 'Unable to book seat. It may have been taken by someone else.',
+        });
+        return;
+      }
+
+      if (data) {
+        const seat = seats.find(s => s.id === seatId);
+        if (!seat) return;
+
+        // Update local state
+        const updatedSeats = seats.map(s =>
+          s.id === seatId
+            ? { ...s, status: 'pending' as const, user: user.username, pending_until: pendingUntil }
+            : s
+        );
+        setSeats(updatedSeats);
+
+        showNotification({
+          type: 'success',
+          title: '🎉 Seat Booked Successfully!',
+          message: `
+            <div class="space-y-2">
+              <div><strong>Seat:</strong> ${seat.name}</div>
+              <div><strong>Location:</strong> ${seat.location}</div>
+              <div><strong>Status:</strong> <span class="text-pending-600 font-medium">Pending Confirmation</span></div>
+              <div><strong>Confirm Within:</strong> <span class="text-red-600 font-medium">5 minutes</span></div>
+              <div class="text-sm text-gray-600 mt-2">Please visit the admin desk to confirm your booking.</div>
+            </div>
+          `,
+          actionButton: {
+            label: 'Check My Reservations',
+            onClick: () => window.location.href = '/my-reservations'
+          }
+        });
+      }
     } catch (error) {
+      console.error('Booking error:', error);
       showNotification({
         type: 'error',
         title: 'Booking Failed',
@@ -126,6 +175,28 @@ const Dashboard = () => {
 
   const handleCancelBooking = async (seatId: number) => {
     try {
+      console.log('Cancelling booking for seat:', seatId);
+      
+      const { error } = await supabase
+        .from('seats')
+        .update({
+          status: 'available',
+          user_id: null,
+          pending_until: null
+        })
+        .eq('id', seatId)
+        .eq('user_id', user?.id);
+
+      if (error) {
+        console.error('Cancel error:', error);
+        showNotification({
+          type: 'error',
+          title: 'Cancellation Failed',
+          message: 'Unable to cancel booking. Please try again.',
+        });
+        return;
+      }
+
       const updatedSeats = seats.map(s =>
         s.id === seatId
           ? { ...s, status: 'available' as const, user: undefined, pending_until: undefined }
@@ -139,6 +210,7 @@ const Dashboard = () => {
         message: 'Your seat booking has been cancelled successfully.',
       });
     } catch (error) {
+      console.error('Cancel error:', error);
       showNotification({
         type: 'error',
         title: 'Cancellation Failed',
@@ -149,6 +221,28 @@ const Dashboard = () => {
 
   const handleReleaseSeat = async (seatId: number) => {
     try {
+      console.log('Releasing seat:', seatId);
+      
+      const { error } = await supabase
+        .from('seats')
+        .update({
+          status: 'available',
+          user_id: null,
+          reserved_until: null
+        })
+        .eq('id', seatId)
+        .eq('user_id', user?.id);
+
+      if (error) {
+        console.error('Release error:', error);
+        showNotification({
+          type: 'error',
+          title: 'Release Failed',
+          message: 'Unable to release seat. Please try again.',
+        });
+        return;
+      }
+
       const updatedSeats = seats.map(s =>
         s.id === seatId
           ? { ...s, status: 'available' as const, user: undefined, reserved_until: undefined }
@@ -162,12 +256,34 @@ const Dashboard = () => {
         message: 'Your seat has been released successfully.',
       });
     } catch (error) {
+      console.error('Release error:', error);
       showNotification({
         type: 'error',
         title: 'Release Failed',
         message: 'Unable to release seat. Please try again.',
       });
     }
+  };
+
+  const applyFilters = () => {
+    let filtered = seats;
+
+    if (filters.search) {
+      filtered = filtered.filter(seat =>
+        seat.name.toLowerCase().includes(filters.search.toLowerCase()) ||
+        seat.location.toLowerCase().includes(filters.search.toLowerCase())
+      );
+    }
+
+    if (filters.status !== 'all') {
+      filtered = filtered.filter(seat => seat.status === filters.status);
+    }
+
+    if (filters.location !== 'all') {
+      filtered = filtered.filter(seat => seat.location === filters.location);
+    }
+
+    setFilteredSeats(filtered);
   };
 
   const clearFilters = () => {
