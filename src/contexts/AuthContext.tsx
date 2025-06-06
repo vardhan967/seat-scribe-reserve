@@ -16,6 +16,31 @@ interface AuthContextType {
   loading: boolean;
 }
 
+// Mock user database for testing
+const mockUsers = [
+  {
+    id: 1,
+    username: 'admin',
+    password: 'password',
+    email: 'admin@library.com',
+    is_staff: true,
+  },
+  {
+    id: 2,
+    username: 'user',
+    password: 'password',
+    email: 'user@library.com',
+    is_staff: false,
+  },
+  {
+    id: 3,
+    username: 'librarian',
+    password: 'librarian123',
+    email: 'librarian@library.com',
+    is_staff: true,
+  },
+];
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
@@ -36,14 +61,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const checkAuth = async () => {
     try {
-      // Mock API call - replace with actual API endpoint
-      const response = await fetch('/api/auth/me/', {
-        credentials: 'include',
-      });
-      
-      if (response.ok) {
-        const userData = await response.json();
-        setUser(userData);
+      // Check if user is stored in localStorage for persistence
+      const storedUser = localStorage.getItem('mockUser');
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
       }
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -54,23 +75,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      // Mock login - replace with actual API call
-      const response = await fetch('/accounts/login/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken(),
-        },
-        credentials: 'include',
-        body: JSON.stringify({ username, password }),
-      });
+      console.log('Attempting login with:', { username, password });
+      
+      // Find user in mock database
+      const foundUser = mockUsers.find(
+        (u) => u.username === username && u.password === password
+      );
 
-      if (response.ok) {
-        const userData = await response.json();
+      if (foundUser) {
+        const userData = {
+          id: foundUser.id,
+          username: foundUser.username,
+          email: foundUser.email,
+          is_staff: foundUser.is_staff,
+        };
+        
         setUser(userData);
+        // Store in localStorage for persistence
+        localStorage.setItem('mockUser', JSON.stringify(userData));
+        console.log('Login successful for user:', userData);
         return true;
       }
       
+      console.log('Login failed: Invalid credentials');
       return false;
     } catch (error) {
       console.error('Login failed:', error);
@@ -84,18 +111,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false;
       }
 
-      // Mock register - replace with actual API call
-      const response = await fetch('/accounts/register/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken(),
-        },
-        credentials: 'include',
-        body: JSON.stringify({ username, password }),
-      });
+      // Check if username already exists
+      const existingUser = mockUsers.find((u) => u.username === username);
+      if (existingUser) {
+        console.log('Registration failed: Username already exists');
+        return false;
+      }
 
-      return response.ok;
+      // For mock implementation, we'll just return success without actually storing
+      // In a real app, this would create a new user in the database
+      console.log('Mock registration successful for username:', username);
+      return true;
     } catch (error) {
       console.error('Registration failed:', error);
       return false;
@@ -104,13 +130,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async (): Promise<void> => {
     try {
-      await fetch('/accounts/logout/', {
-        method: 'POST',
-        headers: {
-          'X-CSRFToken': getCsrfToken(),
-        },
-        credentials: 'include',
-      });
+      localStorage.removeItem('mockUser');
+      console.log('User logged out');
     } catch (error) {
       console.error('Logout failed:', error);
     } finally {
